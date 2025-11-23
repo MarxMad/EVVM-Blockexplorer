@@ -1,239 +1,375 @@
 # EVVM Block Explorer
 
-Un explorador de bloques para la EVVM (MATE Metaprotocol) construido con Next.js y Amp de The Graph.
+A block explorer for EVVM (MATE Metaprotocol) built with Next.js and The Graph's Amp.
 
-## 🎯 Descripción
+## 🎯 Description
 
-Este explorador de bloques permite visualizar y explorar la actividad de la EVVM, una cadena de bloques virtual que existe como contratos inteligentes en Sepolia. Utiliza **Amp de The Graph** para indexar eventos del contrato EVVM personalizado con eventos.
+This block explorer allows you to visualize and explore EVVM activity, a virtual blockchain that exists as smart contracts on Sepolia. It uses **The Graph's Amp** to index events from a custom EVVM contract with events.
 
-**✨ Características principales:**
-- Indexación automática de eventos usando `eventTables()` de Amp
-- Visualización de transacciones, balances y recompensas
-- Tracking de múltiples tipos de eventos (pagos, recompensas, cambios de balance, etc.)
+**✨ Key Features:**
+- Automatic event indexing using Amp's `eventTables()`
+- Visualization of transactions, balances, and rewards
+- Tracking of multiple event types (payments, rewards, balance changes, etc.)
 
-## 🚀 Características
+## 🏗️ Architecture
 
-- **Página Principal**: Muestra los últimos bloques y transacciones EVVM, junto con estadísticas generales
-- **Detalle de Bloque**: Visualiza información completa de cada bloque virtual EVVM y sus transacciones
-- **Detalle de Transacción**: Muestra todos los detalles de una transacción EVVM, incluyendo enlaces a la transacción L1
-- **Detalle de Dirección**: Historial de transacciones para direcciones EVVM
-- **Eventos Indexados**: 
-  - `PayExecuted` - Pagos individuales
-  - `PayMultipleExecuted` - Pagos múltiples
-  - `DispersePayExecuted` - Distribución de pagos
-  - `BalanceUpdated` - Cambios de balance
-  - `RewardGiven` - Recompensas otorgadas
-  - `RewardRecalculated` - Recalculo de recompensas
-  - `TreasuryAmountAdded/Removed` - Operaciones del treasury
-  - `StakerStatusUpdated` - Cambios de estado de staker
+### System Architecture
 
-## 📋 Prerrequisitos
+```mermaid
+graph TB
+    subgraph "L1 Blockchain - Sepolia"
+        SC[EVVM Smart Contract]
+        SC -->|Emits Events| Events[Contract Events]
+    end
+    
+    subgraph "Indexing Layer"
+        Events -->|Stream| Amp[Amp Indexer]
+        Amp -->|SQL Queries| DB[(PostgreSQL)]
+        Amp -->|HTTP API| API[Amp HTTP Endpoint]
+    end
+    
+    subgraph "Frontend - Next.js"
+        API -->|SQL Queries| NextJS[Next.js App]
+        NextJS -->|Render| UI[User Interface]
+    end
+    
+    style SC fill:#4A90E2
+    style Amp fill:#6B46C1
+    style NextJS fill:#000000
+    style DB fill:#336791
+```
 
-- Node.js 22+ y pnpm 10+ (este proyecto usa pnpm como el [demo oficial de Amp](https://github.com/edgeandnode/amp-demo))
-- [Amp](https://github.com/edgeandnode/amp) instalado y ejecutándose
-- PostgreSQL (para la base de datos de metadatos de Amp)
-- Foundry (para compilar y desplegar contratos)
+### Data Flow
 
-## 🛠️ Configuración Rápida
+```mermaid
+sequenceDiagram
+    participant User
+    participant Contract as EVVM Contract
+    participant L1 as Sepolia L1
+    participant Amp as Amp Indexer
+    participant DB as PostgreSQL
+    participant API as Amp API
+    participant Frontend as Next.js Frontend
+    
+    User->>Contract: Execute Transaction
+    Contract->>L1: Emit Event
+    L1->>Amp: Stream Events
+    Amp->>DB: Index & Store
+    User->>Frontend: View Explorer
+    Frontend->>API: SQL Query
+    API->>DB: Execute Query
+    DB->>API: Return Results
+    API->>Frontend: JSON Lines
+    Frontend->>User: Display Data
+```
 
-### 1. Instalar dependencias
+### Event Indexing Flow
+
+```mermaid
+graph LR
+    subgraph "Event Types"
+        PE[PayExecuted]
+        PME[PayMultipleExecuted]
+        DPE[DispersePayExecuted]
+        BU[BalanceUpdated]
+        RG[RewardGiven]
+        RR[RewardRecalculated]
+        TA[TreasuryAmountAdded]
+        TR[TreasuryAmountRemoved]
+        SSU[StakerStatusUpdated]
+    end
+    
+    subgraph "Amp Processing"
+        PE -->|eventTables| T1[pay_executed Table]
+        PME -->|eventTables| T2[pay_multiple_executed Table]
+        DPE -->|eventTables| T3[disperse_pay_executed Table]
+        BU -->|eventTables| T4[balance_updated Table]
+        RG -->|eventTables| T5[reward_given Table]
+        RR -->|eventTables| T6[reward_recalculated Table]
+        TA -->|eventTables| T7[treasury_amount_added Table]
+        TR -->|eventTables| T8[treasury_amount_removed Table]
+        SSU -->|eventTables| T9[staker_status_updated Table]
+    end
+    
+    T1 --> SQL[SQL Queries]
+    T2 --> SQL
+    T3 --> SQL
+    T4 --> SQL
+    T5 --> SQL
+    T6 --> SQL
+    T7 --> SQL
+    T8 --> SQL
+    T9 --> SQL
+    
+    style PE fill:#10B981
+    style PME fill:#10B981
+    style DPE fill:#10B981
+    style BU fill:#3B82F6
+    style RG fill:#F59E0B
+    style RR fill:#F59E0B
+```
+
+### Component Architecture
+
+```mermaid
+graph TB
+    subgraph "Next.js App Router"
+        Home[Home Page<br/>page.tsx]
+        Block[Block Detail<br/>block/[id]/page.tsx]
+        Tx[Transaction Detail<br/>tx/[id]/page.tsx]
+        Address[Address Detail<br/>address/[id]/page.tsx]
+    end
+    
+    subgraph "API Layer"
+        AmpAPI[lib/api/amp.ts]
+        AmpAPI -->|queryAmpSQL| Functions[Query Functions]
+    end
+    
+    subgraph "Data Layer"
+        Functions -->|SQL| Amp[Amp HTTP Endpoint]
+        Amp -->|JSON Lines| Parse[Data Parsing]
+    end
+    
+    subgraph "UI Components"
+        Home --> Components[React Components]
+        Block --> Components
+        Tx --> Components
+        Address --> Components
+        Components --> UI[shadcn/ui]
+    end
+    
+    Parse --> Components
+    
+    style Home fill:#0070F3
+    style Block fill:#0070F3
+    style Tx fill:#0070F3
+    style Address fill:#0070F3
+    style AmpAPI fill:#6B46C1
+```
+
+## 🚀 Features
+
+- **Home Page**: Displays the latest EVVM blocks and transactions, along with general statistics
+- **Block Detail**: Visualizes complete information for each virtual EVVM block and its transactions
+- **Transaction Detail**: Shows all details of an EVVM transaction, including links to the L1 transaction
+- **Address Detail**: Transaction history for EVVM addresses
+- **Indexed Events**: 
+  - `PayExecuted` - Individual payments
+  - `PayMultipleExecuted` - Multiple payments
+  - `DispersePayExecuted` - Payment distribution
+  - `BalanceUpdated` - Balance changes
+  - `RewardGiven` - Rewards granted
+  - `RewardRecalculated` - Reward recalculation
+  - `TreasuryAmountAdded/Removed` - Treasury operations
+  - `StakerStatusUpdated` - Staker status changes
+
+## 📋 Prerequisites
+
+- Node.js 22+ and pnpm 10+ (this project uses pnpm like the [official Amp demo](https://github.com/edgeandnode/amp-demo))
+- [Amp](https://github.com/edgeandnode/amp) installed and running
+- PostgreSQL (for Amp metadata database)
+- Foundry (for compiling and deploying contracts)
+
+## 🛠️ Quick Setup
+
+### 1. Install Dependencies
 
 ```bash
-# Instalar pnpm si no lo tienes
+# Install pnpm if you don't have it
 npm install -g pnpm
 
-# Instalar dependencias del proyecto
+# Install project dependencies
 pnpm install
 
-# Instalar dependencias de Foundry
+# Install Foundry dependencies
 pnpm run forge:install-deps
 ```
 
-### 2. Configurar y Ejecutar Amp
+### 2. Configure and Run Amp
 
-**🚀 Quick Start**: Consulta [docs/QUICK_START.md](./docs/QUICK_START.md) para una guía paso a paso simplificada.
+**🚀 Quick Start**: See [docs/QUICK_START.md](./docs/QUICK_START.md) for a simplified step-by-step guide.
 
-**📖 Guía Completa**: Consulta [docs/SETUP.md](./docs/SETUP.md) para instrucciones detalladas.
+**📖 Complete Guide**: See [docs/SETUP.md](./docs/SETUP.md) for detailed instructions.
 
-**Resumen rápido:**
+**Quick summary:**
 
-1. **Instalar PostgreSQL**:
+1. **Install PostgreSQL**:
    ```bash
    brew install postgresql@16
    brew services start postgresql@16
    ```
 
-2. **Instalar Amp**:
+2. **Install Amp**:
    ```bash
    curl -fsSL https://ampup.sh/install.sh | sh
    ```
 
-3. **Configurar Amp**: La configuración está en `infra/amp/config.toml` y `infra/amp/providers/sepolia.toml`
+3. **Configure Amp**: Configuration is in `infra/amp/config.toml` and `infra/amp/providers/sepolia.toml`
 
-4. **Iniciar Amp**:
+4. **Start Amp**:
    ```bash
    pnpm run amp:server
-   # O: ampd --config infra/amp/config.toml dev
+   # Or: ampd --config infra/amp/config.toml dev
    ```
 
-5. **Construir y desplegar datasets**:
+5. **Build and deploy datasets**:
    ```bash
    pnpm run amp:setup
    ```
 
-6. **Iniciar el frontend**:
+6. **Start the frontend**:
    ```bash
    pnpm run dev
    ```
 
-Para más detalles, ver [docs/SETUP.md](./docs/SETUP.md).
+For more details, see [docs/SETUP.md](./docs/SETUP.md).
 
-### 3. Desplegar Contrato EVVM con Eventos
+### 3. Deploy EVVM Contract with Events
 
-El proyecto incluye un contrato personalizado `EvvmWithEvents.sol` con eventos para mejor integración con Amp.
+The project includes a custom `EvvmWithEvents.sol` contract with events for better Amp integration.
 
-**Desplegar el contrato:**
+**Deploy the contract:**
 
 ```bash
-# 1. Configurar variables de entorno en .env
-PRIVATE_KEY=tu_private_key_sin_0x
+# 1. Configure environment variables in .env
+PRIVATE_KEY=your_private_key_without_0x
 SEPOLIA_RPC_URL=https://rpc.sepolia.org
-ETHERSCAN_API_KEY=tu_key_opcional
+ETHERSCAN_API_KEY=your_optional_key
 
-# 2. Compilar contratos
+# 2. Compile contracts
 pnpm run forge:build
 
-# 3. Desplegar
+# 3. Deploy
 export PRIVATE_KEY=$(grep "^PRIVATE_KEY=" .env | cut -d= -f2)
 export SEPOLIA_RPC_URL=$(grep "^SEPOLIA_RPC_URL=" .env | cut -d= -f2 | xargs)
 export ETHERSCAN_API_KEY=""
 pnpm run forge:deploy
 ```
 
-**Después del despliegue:**
+**After deployment:**
 
-1. Guarda la dirección del contrato desplegado
-2. Copia el ABI: `cp out/EvvmWithEvents.sol/EvvmWithEvents.json abis/EvvmWithEvents.json`
-3. Actualiza `amp.config.ts` con la nueva dirección (ya está configurado para usar `eventTables()`)
-4. Reconstruye el dataset: `pnpm run amp:build && pnpm run amp:register && pnpm run amp:deploy`
+1. Save the deployed contract address
+2. Copy the ABI: `cp out/EvvmWithEvents.sol/EvvmWithEvents.json abis/EvvmWithEvents.json`
+3. Update `amp.config.ts` with the new address (already configured to use `eventTables()`)
+4. Rebuild the dataset: `pnpm run amp:build && pnpm run amp:register && pnpm run amp:deploy`
 
-Ver [docs/DEPLOY_EVVM_WITH_EVENTS.md](./docs/DEPLOY_EVVM_WITH_EVENTS.md) para más detalles.
+See [docs/DEPLOY_EVVM_WITH_EVENTS.md](./docs/DEPLOY_EVVM_WITH_EVENTS.md) for more details.
 
-### 4. Generar Transacciones de Prueba
+### 4. Generate Test Transactions
 
-Para generar eventos y probar el sistema:
+To generate events and test the system:
 
 ```bash
-# Usar el script de Foundry para generar transacciones
+# Use the Foundry script to generate transactions
 pnpm run forge:test-transactions
 ```
 
-O manualmente usando `addBalance` (función de faucet):
+Or manually using `addBalance` (faucet function):
 
 ```bash
-# Agregar balance a una cuenta (emite BalanceUpdated)
+# Add balance to an account (emits BalanceUpdated)
 cast send 0x4Db514984aAE6A24A05f07c30310050c245b0256 \
   "addBalance(address,address,uint256)" \
-  0xTU_DIRECCION \
+  0xYOUR_ADDRESS \
   0x0000000000000000000000000000000000000000 \
   1000000000000000000 \
   --rpc-url $SEPOLIA_RPC_URL \
   --private-key $PRIVATE_KEY
 ```
 
-Ver [docs/GENERATE_TEST_TRANSACTIONS.md](./docs/GENERATE_TEST_TRANSACTIONS.md) para más opciones.
+See [docs/GENERATE_TEST_TRANSACTIONS.md](./docs/GENERATE_TEST_TRANSACTIONS.md) for more options.
 
-### 5. Configurar Variables de Entorno
+### 5. Configure Environment Variables
 
-Crea un archivo `.env.local` en la raíz del proyecto:
+Create a `.env.local` file in the project root:
 
 ```env
-# Endpoint HTTP de Amp (por defecto: http://localhost:1603)
+# Amp HTTP endpoint (default: http://localhost:1603)
 NEXT_PUBLIC_AMP_ENDPOINT=http://localhost:1603
 
-# Namespace donde están tus tablas EVVM (ajusta según tu configuración)
+# Namespace where your EVVM tables are (adjust according to your configuration)
 NEXT_PUBLIC_AMP_NAMESPACE=evvm
 
-# RPC de Sepolia (opcional, para consultas directas como fallback)
+# Sepolia RPC (optional, for direct queries as fallback)
 NEXT_PUBLIC_SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
 ```
 
-### 6. Ejecutar en desarrollo
+### 6. Run in Development
 
 ```bash
 pnpm run dev
 ```
 
-Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## 📊 Contrato Desplegado
+## 📊 Deployed Contract
 
-**Contrato EVVM con Eventos en Sepolia:**
-- Dirección: `0x4Db514984aAE6A24A05f07c30310050c245b0256`
+**EVVM Contract with Events on Sepolia:**
+- Address: `0x4Db514984aAE6A24A05f07c30310050c245b0256`
 - EVVM ID: `1000`
-- Ver en Etherscan: [Sepolia Explorer](https://sepolia.etherscan.io/address/0x4Db514984aAE6A24A05f07c30310050c245b0256)
+- View on Etherscan: [Sepolia Explorer](https://sepolia.etherscan.io/address/0x4Db514984aAE6A24A05f07c30310050c245b0256)
 
-## 📋 Plan de Implementación
+## 📋 Implementation Plan
 
-Para implementar el block scanner completo que trackee múltiples contratos EVVM:
+To implement the complete block scanner that tracks multiple EVVM contracts:
 
-- **Resumen Ejecutivo**: [docs/IMPLEMENTATION_SUMMARY.md](./docs/IMPLEMENTATION_SUMMARY.md)
-- **Plan Completo**: [docs/IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md)
+- **Executive Summary**: [docs/IMPLEMENTATION_SUMMARY.md](./docs/IMPLEMENTATION_SUMMARY.md)
+- **Complete Plan**: [docs/IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md)
 
-El plan incluye:
-- Arquitectura de datos con Amp
-- Estructura de tablas para múltiples EVVM
-- Tracking de transacciones y bloques virtuales
-- Decodificación de funciones
-- Frontend completo del block scanner
+The plan includes:
+- Data architecture with Amp
+- Table structure for multiple EVVMs
+- Transaction and virtual block tracking
+- Function decoding
+- Complete block scanner frontend
 
-## 📁 Estructura del Proyecto
+## 📁 Project Structure
 
 ```
 EVVM-Blockexplorer/
-├── app/                    # Páginas de Next.js
-│   ├── page.tsx           # Página principal
-│   ├── block/[id]/        # Detalle de bloque
-│   ├── tx/[id]/           # Detalle de transacción
-│   └── address/[id]/      # Detalle de dirección
-├── components/            # Componentes React
-├── contracts/             # Contratos Solidity
-│   ├── EvvmWithEvents.sol # Contrato EVVM con eventos
+├── app/                    # Next.js pages
+│   ├── page.tsx           # Home page
+│   ├── block/[id]/        # Block detail
+│   ├── tx/[id]/           # Transaction detail
+│   └── address/[id]/      # Address detail
+├── components/            # React components
+├── contracts/             # Solidity contracts
+│   ├── EvvmWithEvents.sol # EVVM contract with events
 │   └── RegistryEvvmWithEvents.sol
-├── scripts/              # Scripts de Foundry
+├── scripts/              # Foundry scripts
 │   ├── DeployEvvmWithEvents.s.sol
 │   └── GenerateTestTransactions.s.sol
-├── abis/                 # ABIs de contratos
+├── abis/                 # Contract ABIs
 ├── lib/
 │   ├── api/
-│   │   └── amp.ts         # Funciones para consultar Amp
+│   │   └── amp.ts         # Functions to query Amp
 │   ├── types/
-│   │   └── evvm.ts        # Tipos TypeScript para datos EVVM
+│   │   └── evvm.ts        # TypeScript types for EVVM data
 │   ├── utils/
-│   │   └── format.ts      # Funciones de formateo
-│   └── config.ts          # Configuración del proyecto
-├── infra/amp/            # Configuración de Amp
+│   │   └── format.ts      # Formatting functions
+│   └── config.ts          # Project configuration
+├── infra/amp/            # Amp configuration
 │   ├── config.toml
 │   └── providers/
-└── public/                # Archivos estáticos
+└── public/                # Static files
 ```
 
-## 🔧 Uso
+## 🔧 Usage
 
-### Consultar Datos de Amp
+### Query Amp Data
 
-El proyecto incluye funciones predefinidas para consultar datos de Amp usando SQL:
+The project includes predefined functions to query Amp data using SQL:
 
 ```typescript
 import { queryAmpSQL } from "@/lib/api/amp"
 
-// Obtener últimos pagos
+// Get latest payments
 const payments = await queryAmpSQL(`
   SELECT * FROM "evvm/evvm_explorer@dev".pay_executed 
   ORDER BY block_num DESC LIMIT 10
 `)
 
-// Obtener cambios de balance
+// Get balance changes
 const balances = await queryAmpSQL(`
   SELECT * FROM "evvm/evvm_explorer@dev".balance_updated 
   WHERE account = '0x...' 
@@ -241,12 +377,12 @@ const balances = await queryAmpSQL(`
 `)
 ```
 
-### Personalizar Consultas SQL
+### Customize SQL Queries
 
-Puedes modificar las consultas SQL en `lib/api/amp.ts` para ajustarlas a tu schema. Amp acepta SQL estándar:
+You can modify SQL queries in `lib/api/amp.ts` to adjust them to your schema. Amp accepts standard SQL:
 
 ```typescript
-// Ejemplo de consulta directa
+// Direct query example
 const sql = `SELECT * FROM "evvm/evvm_explorer@dev".pay_executed ORDER BY block_num DESC LIMIT 10`
 const response = await fetch('http://localhost:1603', {
   method: 'POST',
@@ -254,84 +390,84 @@ const response = await fetch('http://localhost:1603', {
 })
 ```
 
-Amp devuelve resultados en formato JSON Lines (una línea JSON por fila).
+Amp returns results in JSON Lines format (one JSON line per row).
 
-## 🎨 Personalización
+## 🎨 Customization
 
-- **Estilos**: Modifica `app/globals.css` para cambiar los estilos globales
-- **Componentes UI**: Los componentes están en `components/ui/` usando shadcn/ui
-- **Tema**: El proyecto usa `next-themes` para soporte de tema claro/oscuro
+- **Styles**: Modify `app/globals.css` to change global styles
+- **UI Components**: Components are in `components/ui/` using shadcn/ui
+- **Theme**: The project uses `next-themes` for light/dark theme support
 
-## 🚢 Despliegue
+## 🚢 Deployment
 
-### Vercel (Recomendado)
+### Vercel (Recommended)
 
-1. Conecta tu repositorio a Vercel
-2. Configura las variables de entorno en el dashboard de Vercel
-3. Despliega
+1. Connect your repository to Vercel
+2. Configure environment variables in the Vercel dashboard
+3. Deploy
 
-### Otros proveedores
+### Other Providers
 
-El proyecto es compatible con cualquier plataforma que soporte Next.js:
+The project is compatible with any platform that supports Next.js:
 - Netlify
 - Railway
 - AWS Amplify
 - etc.
 
-## 📝 Notas Importantes
+## 📝 Important Notes
 
-- **Eventos del Contrato**: El contrato `EvvmWithEvents` emite eventos que Amp indexa automáticamente usando `eventTables()`
-- **Rendimiento**: Las consultas SQL a Amp son rápidas, pero considera implementar caché si tienes mucho tráfico
-- **Namespaces**: Amp organiza los datos en namespaces. Ajusta `NEXT_PUBLIC_AMP_NAMESPACE` según cómo hayas configurado tu dataset
-- **Formato de Respuesta**: Amp devuelve datos en formato JSON Lines (una línea JSON por fila), que el código parsea automáticamente
-- **Datos Vacíos**: Si las tablas están vacías, es porque aún no hay transacciones que emitan eventos. Genera transacciones de prueba para ver datos
+- **Contract Events**: The `EvvmWithEvents` contract emits events that Amp automatically indexes using `eventTables()`
+- **Performance**: SQL queries to Amp are fast, but consider implementing cache if you have high traffic
+- **Namespaces**: Amp organizes data in namespaces. Adjust `NEXT_PUBLIC_AMP_NAMESPACE` according to how you configured your dataset
+- **Response Format**: Amp returns data in JSON Lines format (one JSON line per row), which the code automatically parses
+- **Empty Data**: If tables are empty, it's because there are no transactions emitting events yet. Generate test transactions to see data
 
-## 🤝 Contribuir
+## 🤝 Contributing
 
-Las contribuciones son bienvenidas. Por favor:
+Contributions are welcome. Please:
 
-1. Fork el proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
+1. Fork the project
+2. Create a branch for your feature (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 📄 Licencia
+## 📄 License
 
-Este proyecto está bajo la licencia MIT.
+This project is licensed under the MIT License.
 
-## 🔗 Enlaces Útiles
+## 🔗 Useful Links
 
-- [Amp GitHub Repository](https://github.com/edgeandnode/amp) - Repositorio oficial de Amp
-- [Amp Documentation](https://ampup.sh/docs) - Documentación y ejemplos
+- [Amp GitHub Repository](https://github.com/edgeandnode/amp) - Official Amp repository
+- [Amp Documentation](https://ampup.sh/docs) - Documentation and examples
 - [Next.js Documentation](https://nextjs.org/docs)
 - [EVVM Contract on Sepolia](https://sepolia.etherscan.io/address/0x4Db514984aAE6A24A05f07c30310050c245b0256)
 - [Foundry Documentation](https://book.getfoundry.sh/)
 
 ## 🎯 Hackathon Track
 
-Este proyecto se alinea con la pista **🔊 Best Use of Amp Datasets** de The Graph Hackathon, ya que utiliza completamente Amp para indexar eventos del contrato EVVM y consultarlos vía SQL, construyendo un explorador de bloques completo.
+This project aligns with The Graph Hackathon's **🔊 Best Use of Amp Datasets** track, as it fully utilizes Amp to index EVVM contract events and query them via SQL, building a complete block explorer.
 
-## 🧪 Generar Transacciones de Prueba
+## 🧪 Generate Test Transactions
 
-Para probar el sistema y generar eventos:
+To test the system and generate events:
 
-1. **Usar `addBalance`** (más simple, no requiere firma):
+1. **Use `addBalance`** (simplest, no signature required):
    ```bash
    cast send 0x4Db514984aAE6A24A05f07c30310050c245b0256 \
      "addBalance(address,address,uint256)" \
-     0xTU_DIRECCION \
+     0xYOUR_ADDRESS \
      0x0000000000000000000000000000000000000000 \
      1000000000000000000 \
      --rpc-url $SEPOLIA_RPC_URL \
      --private-key $PRIVATE_KEY
    ```
 
-2. **Usar script de Foundry** (requiere firmas):
+2. **Use Foundry script** (requires signatures):
    ```bash
    pnpm run forge:test-transactions
    ```
 
-3. **Desplegar un contrato helper** que use `caPay` (contract-to-address payment)
+3. **Deploy a helper contract** that uses `caPay` (contract-to-address payment)
 
-Ver [docs/GENERATE_TEST_TRANSACTIONS.md](./docs/GENERATE_TEST_TRANSACTIONS.md) para más detalles.
+See [docs/GENERATE_TEST_TRANSACTIONS.md](./docs/GENERATE_TEST_TRANSACTIONS.md) for more details.
