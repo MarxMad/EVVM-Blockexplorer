@@ -1,0 +1,35 @@
+# Configuración de Amp para EVVM Block Explorer
+# 
+# Copia este archivo a amp.toml y configura tu RPC de Sepolia
+
+# Directorio donde Amp almacenará datos
+data_dir = "./infra/amp"
+
+# Directorio donde están las configuraciones de providers
+providers_dir = "./infra/amp/providers"
+
+[metadata_db]
+# URL de PostgreSQL para metadatos de Amp
+# Para PostgreSQL local (sin contraseña):
+url = "postgresql://gerryp@localhost:5432/amp"
+# Si tienes contraseña, usa:
+# url = "postgresql://gerryp:TU_PASSWORD@localhost:5432/amp"
+
+[providers.sepolia]
+# Configura tu RPC de Sepolia aquí
+# Opciones:
+# 1. Infura (requiere API key): https://infura.io
+# 2. Alchemy (requiere API key): https://alchemy.com
+# 3. RPC público (sin API key, más lento): https://rpc.sepolia.org
+# rpc = "https://sepolia.infura.io/v3/YOUR_INFURA_KEY"  # Requiere API key
+rpc = "https://rpc.sepolia.org"  # RPC público (sin API key, más lento pero funciona)
+
+# Configuración opcional del servidor
+[server]
+# Puerto donde Amp escuchará (por defecto: 1603)
+# port = 1603
+
+# Host donde Amp escuchará (por defecto: localhost)
+# host = "localhost"
+
+

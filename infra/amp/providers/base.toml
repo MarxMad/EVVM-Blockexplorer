@@ -1,0 +1,5 @@
+kind = "evm-rpc"
+url = "https://mainnet.base.org"
+network = "base"
+
+

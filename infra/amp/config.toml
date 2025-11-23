@@ -1,0 +1,38 @@
+# Configuración de Amp para EVVM Block Explorer
+# Basado en el demo oficial: https://github.com/edgeandnode/amp-demo
+#
+# Este archivo debe estar en infra/amp/config.toml
+# El servidor de Amp se ejecuta con: ampd --config infra/amp/config.toml dev
+
+# Directorio donde Amp almacenará datos extraídos
+data_dir = "data"
+
+# Directorio donde están las configuraciones de providers (RPC endpoints)
+providers_dir = "providers"
+
+# Directorio donde se almacenan los manifests de datasets generados
+dataset_defs_dir = "datasets"
+
+# URL de PostgreSQL para metadatos de Amp
+# Para Docker Compose (postgres:5432):
+# metadata_db_url = "postgres://postgres:postgres@postgres:5432/amp?sslmode=disable"
+# Para PostgreSQL local (localhost:5432):
+metadata_db_url = "postgresql://gerryp@localhost:5432/amp?sslmode=disable"
+
+# Límite de memoria en MB (0 = ilimitado)
+max_mem_mb = 0
+
+# Ubicaciones para spill-to-disk (archivos temporales)
+# Array vacío deshabilita spill-to-disk
+spill_location = []
+
+# Direcciones de servicio (opcionales - valores por defecto mostrados)
+# Arrow Flight RPC server address
+# flight_addr = "0.0.0.0:1602"
+
+# JSON Lines server address (usado para queries HTTP POST)
+jsonl_addr = "0.0.0.0:1603"
+
+# Admin API server address
+# admin_api_addr = "0.0.0.0:1610"
+

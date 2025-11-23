@@ -4,77 +4,25 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
-import { ArrowUpRight, Wallet, Copy } from "lucide-react"
+import { ArrowUpRight, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { CopyButton } from "@/components/copy-button"
+import { getEVVMAddress, getEVVMAddressTransactions } from "@/lib/api/amp"
+import { formatRelativeTime, formatAddress, formatEVVMValue, formatHash, formatNumber } from "@/lib/utils/format"
+import { notFound } from "next/navigation"
 
-// Mock data - in a real app, this would come from your blockchain API
-const addressData = {
-  address: "0x1111222233334444555566667777888899990000",
-  balance: "125.4567",
-  balanceUSD: "356,789.23",
-  totalTransactions: 1234,
-}
+export default async function AddressDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const address = id.toLowerCase()
 
-const addressTransactions = [
-  {
-    hash: "0xabcd...ef12",
-    block: 18234567,
-    age: "5 mins ago",
-    from: "0x1111...2222",
-    to: "0x3333...4444",
-    value: "0.5",
-    fee: "0.002",
-    type: "IN",
-  },
-  {
-    hash: "0x1234...5678",
-    block: 18234556,
-    age: "12 mins ago",
-    from: "0x5555...6666",
-    to: "0x7777...8888",
-    value: "1.2",
-    fee: "0.003",
-    type: "OUT",
-  },
-  {
-    hash: "0x9876...5432",
-    block: 18234543,
-    age: "25 mins ago",
-    from: "0x9999...aaaa",
-    to: "0xbbbb...cccc",
-    value: "0.3",
-    fee: "0.001",
-    type: "IN",
-  },
-  {
-    hash: "0xfedc...ba98",
-    block: 18234532,
-    age: "1 hr ago",
-    from: "0xdddd...eeee",
-    to: "0xffff...0000",
-    value: "2.1",
-    fee: "0.004",
-    type: "OUT",
-  },
-  {
-    hash: "0x2468...1357",
-    block: 18234521,
-    age: "2 hrs ago",
-    from: "0x1357...2468",
-    to: "0x9876...5432",
-    value: "0.8",
-    fee: "0.002",
-    type: "IN",
-  },
-]
+  const [addressData, addressTransactions] = await Promise.all([
+    getEVVMAddress(address),
+    getEVVMAddressTransactions(address, 20, 0),
+  ])
 
-const erc20Tokens = [
-  { name: "USD Coin", symbol: "USDC", balance: "10,000", value: "$10,000" },
-  { name: "Wrapped EVVM", symbol: "WEVVM", balance: "5.5", value: "$15,648" },
-  { name: "Tether USD", symbol: "USDT", balance: "25,000", value: "$25,000" },
-]
-
-export default function AddressDetailsPage({ params }: { params: { id: string } }) {
+  if (!addressData) {
+    notFound()
+  }
   return (
     <div className="flex flex-col min-h-screen">
       <Header />
@@ -82,14 +30,12 @@ export default function AddressDetailsPage({ params }: { params: { id: string } 
         {/* Address Header */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-2">
-            <h1 className="text-3xl font-bold">Address</h1>
-            <Badge variant="secondary">Account</Badge>
+            <h1 className="text-3xl font-bold">Dirección EVVM</h1>
+            <Badge variant="secondary">Cuenta</Badge>
           </div>
           <div className="flex items-center gap-2">
             <p className="text-muted-foreground font-mono text-sm break-all">{addressData.address}</p>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Copy className="h-4 w-4" />
-            </Button>
+            <CopyButton text={addressData.address} />
           </div>
         </div>
 
@@ -100,8 +46,10 @@ export default function AddressDetailsPage({ params }: { params: { id: string } 
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Balance</p>
-                  <p className="text-2xl font-bold text-primary">{addressData.balance} EVVM</p>
-                  <p className="text-xs text-muted-foreground mt-1">${addressData.balanceUSD}</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {formatEVVMValue(addressData.balance)} EVVM
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Balance de la dirección</p>
                 </div>
                 <Wallet className="h-8 w-8 text-primary" />
               </div>
@@ -110,17 +58,19 @@ export default function AddressDetailsPage({ params }: { params: { id: string } 
           <Card>
             <CardContent className="pt-6">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Transactions</p>
-                <p className="text-2xl font-bold text-primary">{addressData.totalTransactions}</p>
+                <p className="text-sm text-muted-foreground mb-1">Total Transacciones</p>
+                <p className="text-2xl font-bold text-primary">{formatNumber(addressData.totalTransactions)}</p>
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Tokens</p>
-                <p className="text-2xl font-bold text-primary">{erc20Tokens.length}</p>
-                <p className="text-xs text-muted-foreground mt-1">ERC-20 Tokens</p>
+                <p className="text-sm text-muted-foreground mb-1">Transacciones Entrantes</p>
+                <p className="text-2xl font-bold text-primary">{formatNumber(addressData.incomingTransactions)}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatNumber(addressData.outgoingTransactions)} salientes
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -129,10 +79,7 @@ export default function AddressDetailsPage({ params }: { params: { id: string } 
         {/* Tabs */}
         <Tabs defaultValue="transactions" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="transactions">Transactions</TabsTrigger>
-            <TabsTrigger value="erc20">ERC-20 Token Txns</TabsTrigger>
-            <TabsTrigger value="erc721">ERC-721 Token Txns</TabsTrigger>
-            <TabsTrigger value="internal">Internal Txns</TabsTrigger>
+            <TabsTrigger value="transactions">Transacciones</TabsTrigger>
           </TabsList>
 
           <TabsContent value="transactions">
@@ -140,127 +87,100 @@ export default function AddressDetailsPage({ params }: { params: { id: string } 
               <CardContent className="pt-6">
                 <div className="mb-4">
                   <p className="text-sm text-muted-foreground">
-                    Latest {addressTransactions.length} transactions from a total of {addressData.totalTransactions}{" "}
-                    transactions
+                    Últimas {addressTransactions.length} transacciones de un total de{" "}
+                    {formatNumber(addressData.totalTransactions)} transacciones
                   </p>
                 </div>
                 <div className="space-y-3">
-                  {addressTransactions.map((tx) => (
+                  {addressTransactions.length > 0 ? (
+                    addressTransactions.map((tx) => {
+                      const isIncoming = tx.to.toLowerCase() === address.toLowerCase()
+                      return (
                     <div
-                      key={tx.hash}
+                          key={tx.transactionId}
                       className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 py-4 border-b last:border-0"
                     >
                       <div className="flex items-start gap-3">
                         <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
                           <ArrowUpRight
-                            className={`h-5 w-5 ${tx.type === "IN" ? "text-primary rotate-180" : "text-primary"}`}
+                                className={`h-5 w-5 ${isIncoming ? "text-primary rotate-180" : "text-primary"}`}
                           />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Link
-                              href={`/tx/${tx.hash}`}
+                                  href={`/tx/${tx.transactionId}`}
                               className="font-mono text-sm font-medium text-primary hover:underline"
                             >
-                              {tx.hash}
+                                  {formatHash(tx.hash)}
                             </Link>
-                            <Badge variant={tx.type === "IN" ? "default" : "secondary"} className="text-xs">
-                              {tx.type}
+                                <Badge variant={isIncoming ? "default" : "secondary"} className="text-xs">
+                                  {isIncoming ? "ENTRANTE" : "SALIENTE"}
+                                </Badge>
+                                <Badge
+                                  variant={tx.status === "success" ? "default" : "destructive"}
+                                  className="text-xs"
+                                >
+                                  {tx.status === "success" ? "Éxito" : "Fallida"}
                             </Badge>
                           </div>
                           <div className="text-xs text-muted-foreground space-y-1">
                             <div>
-                              Block:{" "}
-                              <Link href={`/block/${tx.block}`} className="text-primary hover:underline font-mono">
-                                {tx.block}
+                                  Bloque:{" "}
+                                  <Link
+                                    href={`/block/${tx.blockId}`}
+                                    className="text-primary hover:underline font-mono"
+                                  >
+                                    {tx.blockId}
                               </Link>
                             </div>
-                            <div>{tx.age}</div>
+                                <div>{formatRelativeTime(tx.timestamp)}</div>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-6 lg:flex-shrink-0">
                         <div className="min-w-0">
-                          <div className="text-xs text-muted-foreground mb-1">From</div>
+                              <div className="text-xs text-muted-foreground mb-1">De</div>
                           <Link
                             href={`/address/${tx.from}`}
                             className="font-mono text-xs text-primary hover:underline block truncate max-w-[120px]"
                           >
-                            {tx.from}
+                                {formatAddress(tx.from)}
                           </Link>
                         </div>
                         <div className="text-muted-foreground">→</div>
                         <div className="min-w-0">
-                          <div className="text-xs text-muted-foreground mb-1">To</div>
+                              <div className="text-xs text-muted-foreground mb-1">Para</div>
                           <Link
                             href={`/address/${tx.to}`}
                             className="font-mono text-xs text-primary hover:underline block truncate max-w-[120px]"
                           >
-                            {tx.to}
+                                {formatAddress(tx.to)}
                           </Link>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-medium text-primary">{tx.value} EVVM</div>
-                          <div className="text-xs text-muted-foreground">Fee: {tx.fee}</div>
+                              <div className="text-sm font-medium text-primary">
+                                {formatEVVMValue(tx.value)} EVVM
                         </div>
+                              {tx.fee && (
+                                <div className="text-xs text-muted-foreground">Fee: {formatEVVMValue(tx.fee)}</div>
+                              )}
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-6 flex justify-center">
-                  <Button variant="outline">Load More</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="erc20">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="mb-4">
-                  <p className="text-sm text-muted-foreground">ERC-20 token holdings for this address</p>
-                </div>
-                <div className="space-y-4">
-                  {erc20Tokens.map((token) => (
-                    <div key={token.symbol} className="flex items-center justify-between py-4 border-b last:border-0">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-primary font-bold text-sm">{token.symbol.charAt(0)}</span>
                         </div>
-                        <div>
-                          <p className="font-medium">{token.name}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{token.symbol}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-primary">
-                          {token.balance} {token.symbol}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{token.value}</p>
-                      </div>
+                      )
+                    })
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No hay transacciones para esta dirección</p>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="erc721">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>No ERC-721 token transfers found for this address</p>
+                {addressTransactions.length > 0 && addressData.totalTransactions > addressTransactions.length && (
+                  <div className="mt-6 flex justify-center">
+                    <Button variant="outline">Cargar Más</Button>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="internal">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>No internal transactions found for this address</p>
-                </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

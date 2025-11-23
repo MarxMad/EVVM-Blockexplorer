@@ -4,25 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { ArrowUpRight, Blocks, Activity, Fuel, Clock } from "lucide-react"
+import { getLatestEVVMBlocks, getLatestEVVMTransactions, getEVVMStats } from "@/lib/api/amp"
+import { formatRelativeTime, formatAddress, formatEVVMValue, formatNumber } from "@/lib/utils/format"
+import { BASE_CHAIN } from "@/lib/config"
 
-// Mock data - in a real app, this would come from your blockchain API
-const latestBlocks = [
-  { number: 18234567, miner: "0x1234...5678", txCount: 234, reward: "2.5", time: "12 secs ago" },
-  { number: 18234566, miner: "0x8765...4321", txCount: 189, reward: "2.5", time: "24 secs ago" },
-  { number: 18234565, miner: "0x2468...1357", txCount: 156, reward: "2.5", time: "36 secs ago" },
-  { number: 18234564, miner: "0x9753...8642", txCount: 203, reward: "2.5", time: "48 secs ago" },
-  { number: 18234563, miner: "0x3691...2580", txCount: 178, reward: "2.5", time: "1 min ago" },
-]
-
-const latestTransactions = [
-  { hash: "0xabcd...ef12", from: "0x1111...2222", to: "0x3333...4444", value: "0.5", time: "5 secs ago" },
-  { hash: "0x1234...5678", from: "0x5555...6666", to: "0x7777...8888", value: "1.2", time: "8 secs ago" },
-  { hash: "0x9876...5432", from: "0x9999...aaaa", to: "0xbbbb...cccc", value: "0.3", time: "12 secs ago" },
-  { hash: "0xfedc...ba98", from: "0xdddd...eeee", to: "0xffff...0000", value: "2.1", time: "15 secs ago" },
-  { hash: "0x2468...1357", from: "0x1357...2468", to: "0x9876...5432", value: "0.8", time: "18 secs ago" },
-]
-
-export default function HomePage() {
+export default async function HomePage() {
+  // Obtener datos de Amp
+  const [latestBlocks, latestTransactions, stats] = await Promise.all([
+    getLatestEVVMBlocks(5),
+    getLatestEVVMTransactions(5),
+    getEVVMStats(),
+  ])
   return (
     <div className="flex flex-col min-h-screen">
       <Header />
@@ -35,11 +27,9 @@ export default function HomePage() {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground mb-1">EVVM Price</p>
-                      <p className="text-2xl font-bold text-primary">$2,845.32</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        <span className="text-primary">+2.3%</span> (24h)
-                      </p>
+                      <p className="text-sm text-muted-foreground mb-1">Total Blocks</p>
+                      <p className="text-2xl font-bold text-primary">{formatNumber(stats.totalBlocks)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Bloques virtuales EVVM</p>
                     </div>
                     <Activity className="h-8 w-8 text-primary" />
                   </div>
@@ -50,8 +40,10 @@ export default function HomePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">Latest Block</p>
-                      <p className="text-2xl font-bold text-primary">18,234,567</p>
-                      <p className="text-xs text-muted-foreground mt-1">12 secs ago</p>
+                      <p className="text-2xl font-bold text-primary">{formatNumber(stats.latestBlock)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {latestBlocks[0] ? formatRelativeTime(latestBlocks[0].timestamp) : "N/A"}
+                      </p>
                     </div>
                     <Blocks className="h-8 w-8 text-primary" />
                   </div>
@@ -61,11 +53,9 @@ export default function HomePage() {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground mb-1">Avg. Gas Price</p>
-                      <p className="text-2xl font-bold text-primary">23 Gwei</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        <span className="text-destructive">-5.2%</span> vs yesterday
-                      </p>
+                      <p className="text-sm text-muted-foreground mb-1">Network</p>
+                      <p className="text-2xl font-bold text-primary">{BASE_CHAIN.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Cadena base</p>
                     </div>
                     <Fuel className="h-8 w-8 text-primary" />
                   </div>
@@ -76,8 +66,8 @@ export default function HomePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">Transactions (24h)</p>
-                      <p className="text-2xl font-bold text-primary">1.2M</p>
-                      <p className="text-xs text-muted-foreground mt-1">14.3 TPS</p>
+                      <p className="text-2xl font-bold text-primary">{formatNumber(stats.totalTransactions24h)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{stats.tps.toFixed(2)} TPS</p>
                     </div>
                     <Clock className="h-8 w-8 text-primary" />
                   </div>
@@ -106,38 +96,52 @@ export default function HomePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {latestBlocks.map((block) => (
-                    <div key={block.number} className="flex items-center justify-between py-3 border-b last:border-0">
+                  {latestBlocks.length > 0 ? (
+                    latestBlocks.map((block) => (
+                      <div key={block.blockId} className="flex items-center justify-between py-3 border-b last:border-0">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center">
                           <Blocks className="h-5 w-5 text-primary" />
                         </div>
                         <div>
                           <Link
-                            href={`/block/${block.number}`}
+                              href={`/block/${block.blockId}`}
                             className="font-mono text-sm font-medium text-primary hover:underline"
                           >
-                            {block.number}
+                              {formatNumber(block.blockId)}
                           </Link>
-                          <p className="text-xs text-muted-foreground">{block.time}</p>
+                            <p className="text-xs text-muted-foreground">{formatRelativeTime(block.timestamp)}</p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm">
-                          Miner:{" "}
-                          <Link href={`/address/${block.miner}`} className="font-mono text-primary hover:underline">
-                            {block.miner}
+                          {block.executor && (
+                            <p className="text-sm text-muted-foreground mb-1">
+                              Executor:{" "}
+                              <Link
+                                href={`/address/${block.executor}`}
+                                className="font-mono text-primary hover:underline"
+                              >
+                                {formatAddress(block.executor)}
                           </Link>
                         </p>
+                          )}
                         <div className="flex items-center gap-2 justify-end mt-1">
                           <Badge variant="secondary" className="text-xs">
-                            {block.txCount} txns
+                              {block.transactionCount} txns
+                            </Badge>
+                            <Badge variant={block.status === "finalized" ? "default" : "outline"} className="text-xs">
+                              {block.status}
                           </Badge>
-                          <span className="text-xs text-primary font-medium">{block.reward} EVVM</span>
+                          </div>
                         </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No hay bloques disponibles</p>
+                      <p className="text-xs mt-2">Configura tu endpoint de Amp para ver datos</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -158,39 +162,48 @@ export default function HomePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {latestTransactions.map((tx) => (
-                    <div key={tx.hash} className="flex items-center justify-between py-3 border-b last:border-0">
+                  {latestTransactions.length > 0 ? (
+                    latestTransactions.map((tx) => (
+                      <div key={tx.transactionId} className="flex items-center justify-between py-3 border-b last:border-0">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center">
                           <ArrowUpRight className="h-5 w-5 text-primary" />
                         </div>
                         <div>
                           <Link
-                            href={`/tx/${tx.hash}`}
+                              href={`/tx/${tx.transactionId}`}
                             className="font-mono text-sm font-medium text-primary hover:underline"
                           >
-                            {tx.hash}
+                              {formatAddress(tx.hash, 8, 6)}
                           </Link>
-                          <p className="text-xs text-muted-foreground">{tx.time}</p>
+                            <p className="text-xs text-muted-foreground">{formatRelativeTime(tx.timestamp)}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-muted-foreground mb-1">
                           From{" "}
                           <Link href={`/address/${tx.from}`} className="font-mono text-primary hover:underline">
-                            {tx.from}
+                              {formatAddress(tx.from)}
                           </Link>
                         </p>
                         <p className="text-xs text-muted-foreground">
                           To{" "}
                           <Link href={`/address/${tx.to}`} className="font-mono text-primary hover:underline">
-                            {tx.to}
+                              {formatAddress(tx.to)}
                           </Link>
                         </p>
-                        <p className="text-sm text-primary font-medium mt-1">{tx.value} EVVM</p>
+                          <p className="text-sm text-primary font-medium mt-1">
+                            {formatEVVMValue(tx.value)} EVVM
+                          </p>
+                        </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No hay transacciones disponibles</p>
+                      <p className="text-xs mt-2">Configura tu endpoint de Amp para ver datos</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
