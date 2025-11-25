@@ -34,5 +34,5 @@ spill_location = []
 jsonl_addr = "0.0.0.0:1603"
 
 # Admin API server address
-# admin_api_addr = "0.0.0.0:1610"
+admin_api_addr = "0.0.0.0:1610"
 

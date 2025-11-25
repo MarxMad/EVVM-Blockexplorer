@@ -202,3 +202,7 @@ Si quieres indexar múltiples EVVMs, puedes:
 - El registro debe hacerse en Sepolia, aunque tu EVVM esté en otra red
 
 
+
+
+
+

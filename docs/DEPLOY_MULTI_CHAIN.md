@@ -118,3 +118,7 @@ export const CURRENT_CHAIN: SupportedChain = "baseSepolia"
 4. **El explorador filtra** por blockchain y dirección del contrato
 
 
+
+
+
+

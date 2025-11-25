@@ -4,7 +4,7 @@
  * Documentación: https://github.com/edgeandnode/amp
  */
 
-import { AMP_CONFIG, EVVM_CONTRACT_ADDRESS, CURRENT_CHAIN } from "@/lib/config"
+import { AMP_CONFIG, EVVM_CONTRACT_ADDRESS, CURRENT_CHAIN, getEvvmIdsByChain } from "@/lib/config"
 import type { EVVMBlock, EVVMTransaction, EVVMAddress, EVVMStats } from "@/lib/types/evvm"
 
 // Normalizar dirección del contrato para comparaciones (sin 0x, minúsculas)
@@ -20,6 +20,31 @@ function getDatasetNamespace(): string {
   } else {
     return "evvm/evvm_explorer@dev" // Sepolia por defecto
   }
+}
+
+/**
+ * Genera una condición WHERE para filtrar por evvmId(s)
+ * Si no se especifica evvmIds, incluye todas las EVVMs de la blockchain actual
+ * Si se especifica un array, filtra por esos evvmIds
+ */
+function buildEvvmIdFilter(evvmIds?: number[]): string {
+  if (!evvmIds || evvmIds.length === 0) {
+    // Si no se especifica, usar todas las EVVMs de la blockchain actual
+    const allEvvmIds = getEvvmIdsByChain(CURRENT_CHAIN)
+    if (allEvvmIds.length === 0) {
+      return "" // No hay filtro si no hay EVVMs registradas
+    }
+    if (allEvvmIds.length === 1) {
+      return `WHERE evvm_id = ${allEvvmIds[0]}`
+    }
+    return `WHERE evvm_id IN (${allEvvmIds.join(", ")})`
+  }
+  
+  if (evvmIds.length === 1) {
+    return `WHERE evvm_id = ${evvmIds[0]}`
+  }
+  
+  return `WHERE evvm_id IN (${evvmIds.join(", ")})`
 }
 
 /**
@@ -105,11 +130,17 @@ async function queryAmpSQL<T>(sql: string): Promise<T[]> {
  * Obtiene los últimos N bloques EVVM
  * Usa los eventos para agrupar por bloque L1
  * Intenta usar pay_executed primero, luego balance_updated como fallback
+ * 
+ * @param limit - Número máximo de bloques a retornar
+ * @param evvmIds - IDs de EVVMs a filtrar (opcional, si no se especifica usa todas las de la blockchain actual)
  */
-export async function getLatestEVVMBlocks(limit: number = 10): Promise<EVVMBlock[]> {
+export async function getLatestEVVMBlocks(limit: number = 10, evvmIds?: number[]): Promise<EVVMBlock[]> {
   const datasetNamespace = getDatasetNamespace()
+  const evvmFilter = buildEvvmIdFilter(evvmIds)
+  
   // Intentar primero con pay_executed (eventos de pagos)
-  // Filtrar por dirección del contrato EVVM
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+  // Filtramos por evvmId para soportar múltiples EVVMs
   let sql = `
     SELECT 
       block_num as block_number,
@@ -117,7 +148,7 @@ export async function getLatestEVVMBlocks(limit: number = 10): Promise<EVVMBlock
       COUNT(*) as transaction_count,
       MIN(tx_hash) as first_transaction_hash
     FROM "${datasetNamespace}".pay_executed
-    WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+    ${evvmFilter}
     GROUP BY block_num
     ORDER BY block_num DESC
     LIMIT ${limit}
@@ -127,6 +158,8 @@ export async function getLatestEVVMBlocks(limit: number = 10): Promise<EVVMBlock
     let results = await queryAmpSQL<any>(sql)
     
     // Si no hay eventos de pay_executed, usar balance_updated como fallback
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+    // Filtramos por evvmId para soportar múltiples EVVMs
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -135,7 +168,7 @@ export async function getLatestEVVMBlocks(limit: number = 10): Promise<EVVMBlock
           COUNT(*) as transaction_count,
           MIN(tx_hash) as first_transaction_hash
         FROM "${datasetNamespace}".balance_updated
-        WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+        ${evvmFilter}
         GROUP BY block_num
         ORDER BY block_num DESC
         LIMIT ${limit}
@@ -174,11 +207,18 @@ export async function getLatestEVVMBlocks(limit: number = 10): Promise<EVVMBlock
 /**
  * Obtiene un bloque EVVM por ID
  * Nota: El ID del bloque corresponde al número de bloque L1
+ * 
+ * @param blockId - ID del bloque L1
+ * @param evvmIds - IDs de EVVMs a filtrar (opcional, si no se especifica usa todas las de la blockchain actual)
  */
-export async function getEVVMBlockById(blockId: number): Promise<EVVMBlock | null> {
+export async function getEVVMBlockById(blockId: number, evvmIds?: number[]): Promise<EVVMBlock | null> {
   const datasetNamespace = getDatasetNamespace()
+  const evvmFilter = buildEvvmIdFilter(evvmIds)
+  const whereClause = evvmFilter ? `${evvmFilter} AND block_num = ${blockId}` : `WHERE block_num = ${blockId}`
+  
   // Intentar primero con pay_executed
-  // Filtrar por dirección del contrato EVVM
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+  // Filtramos por evvmId para soportar múltiples EVVMs
   let sql = `
     SELECT 
       block_num as block_number,
@@ -186,8 +226,7 @@ export async function getEVVMBlockById(blockId: number): Promise<EVVMBlock | nul
       COUNT(*) as transaction_count,
       MIN(tx_hash) as first_transaction_hash
     FROM "${datasetNamespace}".pay_executed
-    WHERE block_num = ${blockId}
-      AND LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+    ${whereClause}
     GROUP BY block_num
     LIMIT 1
   `
@@ -196,6 +235,8 @@ export async function getEVVMBlockById(blockId: number): Promise<EVVMBlock | nul
     let results = await queryAmpSQL<any>(sql)
     
     // Si no hay resultados, usar balance_updated como fallback
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+    // Filtramos por evvmId para soportar múltiples EVVMs
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -204,8 +245,7 @@ export async function getEVVMBlockById(blockId: number): Promise<EVVMBlock | nul
           COUNT(*) as transaction_count,
           MIN(tx_hash) as first_transaction_hash
         FROM "${datasetNamespace}".balance_updated
-        WHERE block_num = ${blockId}
-          AND LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+        ${whereClause}
         GROUP BY block_num
         LIMIT 1
       `
@@ -248,11 +288,18 @@ export async function getEVVMBlockById(blockId: number): Promise<EVVMBlock | nul
  * Obtiene las transacciones de un bloque EVVM
  * Nota: El blockId corresponde al número de bloque L1
  * Intenta usar pay_executed primero, luego balance_updated como fallback
+ * 
+ * @param blockId - ID del bloque L1
+ * @param evvmIds - IDs de EVVMs a filtrar (opcional, si no se especifica usa todas las de la blockchain actual)
  */
-export async function getEVVMBlockTransactions(blockId: number): Promise<EVVMTransaction[]> {
+export async function getEVVMBlockTransactions(blockId: number, evvmIds?: number[]): Promise<EVVMTransaction[]> {
   const datasetNamespace = getDatasetNamespace()
+  const evvmFilter = buildEvvmIdFilter(evvmIds)
+  const whereClause = evvmFilter ? `${evvmFilter} AND block_num = ${blockId}` : `WHERE block_num = ${blockId}`
+  
   // Intentar primero con pay_executed
-  // Filtrar por dirección del contrato EVVM
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+  // Filtramos por evvmId para soportar múltiples EVVMs
   let sql = `
     SELECT 
       tx_hash,
@@ -265,8 +312,7 @@ export async function getEVVMBlockTransactions(blockId: number): Promise<EVVMTra
       priority_flag,
       executor
     FROM "${datasetNamespace}".pay_executed
-    WHERE block_num = ${blockId}
-      AND LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+    ${whereClause}
     ORDER BY timestamp ASC
   `
 
@@ -274,6 +320,8 @@ export async function getEVVMBlockTransactions(blockId: number): Promise<EVVMTra
     let results = await queryAmpSQL<any>(sql)
     
     // Si no hay eventos de pay_executed, usar balance_updated como fallback
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+    // Filtramos por evvmId para soportar múltiples EVVMs
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -287,8 +335,7 @@ export async function getEVVMBlockTransactions(blockId: number): Promise<EVVMTra
           CAST(false AS BOOLEAN) as priority_flag,
           CAST(NULL AS VARCHAR) as executor
         FROM "${datasetNamespace}".balance_updated
-        WHERE block_num = ${blockId}
-          AND LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+        ${whereClause}
         ORDER BY timestamp ASC
       `
       results = await queryAmpSQL<any>(sql)
@@ -333,11 +380,17 @@ export async function getEVVMBlockTransactions(blockId: number): Promise<EVVMTra
 /**
  * Obtiene las últimas N transacciones EVVM
  * Usa eventos PayExecuted primero, luego balance_updated como fallback
+ * 
+ * @param limit - Número máximo de transacciones a retornar
+ * @param evvmIds - IDs de EVVMs a filtrar (opcional, si no se especifica usa todas las de la blockchain actual)
  */
-export async function getLatestEVVMTransactions(limit: number = 10): Promise<EVVMTransaction[]> {
+export async function getLatestEVVMTransactions(limit: number = 10, evvmIds?: number[]): Promise<EVVMTransaction[]> {
   const datasetNamespace = getDatasetNamespace()
+  const evvmFilter = buildEvvmIdFilter(evvmIds)
+  
   // Intentar primero con pay_executed (eventos de pagos reales)
-  // Filtrar por dirección del contrato EVVM
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+  // Filtramos por evvmId para soportar múltiples EVVMs
   let sql = `
     SELECT 
       tx_hash,
@@ -350,7 +403,7 @@ export async function getLatestEVVMTransactions(limit: number = 10): Promise<EVV
       priority_flag,
       executor
     FROM "${datasetNamespace}".pay_executed
-    WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+    ${evvmFilter}
     ORDER BY block_num DESC, timestamp DESC
     LIMIT ${limit}
   `
@@ -360,6 +413,8 @@ export async function getLatestEVVMTransactions(limit: number = 10): Promise<EVV
     
     // Si no hay eventos de pay_executed, usar balance_updated como fallback
     // (representa cambios de balance, aunque no sean pagos completos)
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+    // Filtramos por evvmId para soportar múltiples EVVMs
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -373,7 +428,7 @@ export async function getLatestEVVMTransactions(limit: number = 10): Promise<EVV
           CAST(false AS BOOLEAN) as priority_flag,
           CAST(NULL AS VARCHAR) as executor
         FROM "${datasetNamespace}".balance_updated
-        WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
+        ${evvmFilter}
         ORDER BY block_num DESC, timestamp DESC
         LIMIT ${limit}
       `
@@ -431,6 +486,7 @@ export async function getEVVMTransactionById(transactionId: string): Promise<EVV
   // Filtrar por dirección del contrato EVVM
   
   // Intentar primero con pay_executed
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
   let sql = `
     SELECT 
       tx_hash,
@@ -443,7 +499,6 @@ export async function getEVVMTransactionById(transactionId: string): Promise<EVV
       priority_flag,
       executor
     FROM "${datasetNamespace}".pay_executed
-    WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
     ORDER BY block_num DESC
     LIMIT 1000
   `
@@ -458,6 +513,7 @@ export async function getEVVMTransactionById(transactionId: string): Promise<EVV
     })
     
     // Si no hay resultados, buscar en balance_updated
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     if (!found) {
       sql = `
         SELECT 
@@ -471,7 +527,6 @@ export async function getEVVMTransactionById(transactionId: string): Promise<EVV
           CAST(false AS BOOLEAN) as priority_flag,
           CAST(NULL AS VARCHAR) as executor
         FROM "${datasetNamespace}".balance_updated
-        WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
         ORDER BY block_num DESC
         LIMIT 1000
       `
@@ -536,7 +591,8 @@ export async function getEVVMAddressTransactions(
   const datasetNamespace = getDatasetNamespace()
   const escapedAddress = address.replace(/^0x/i, '').replace(/'/g, "''")
   // Intentar primero con pay_executed
-  // Filtrar por dirección del contrato EVVM Y la dirección del usuario
+  // Nota: No filtramos por address del contrato porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+  // Filtramos solo por from/to (direcciones del usuario)
   let sql = `
     SELECT 
       tx_hash,
@@ -549,8 +605,7 @@ export async function getEVVMAddressTransactions(
       priority_flag,
       executor
     FROM "${datasetNamespace}".pay_executed
-    WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
-      AND (LOWER(CAST("from" AS VARCHAR)) = LOWER('${escapedAddress}') OR LOWER(CAST("to" AS VARCHAR)) = LOWER('${escapedAddress}'))
+    WHERE ("from" = 0x${escapedAddress} OR "to" = 0x${escapedAddress})
     ORDER BY block_num DESC, timestamp DESC
     LIMIT ${limit} OFFSET ${offset}
   `
@@ -559,6 +614,8 @@ export async function getEVVMAddressTransactions(
     let results = await queryAmpSQL<any>(sql)
     
     // Si no hay resultados, buscar en balance_updated
+    // Nota: No filtramos por address del contrato porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+    // Filtramos solo por account (dirección del usuario)
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -572,8 +629,7 @@ export async function getEVVMAddressTransactions(
           CAST(false AS BOOLEAN) as priority_flag,
           CAST(NULL AS VARCHAR) as executor
         FROM "${datasetNamespace}".balance_updated
-        WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
-          AND LOWER(CAST(account AS VARCHAR)) = LOWER('${escapedAddress}')
+        WHERE account = 0x${escapedAddress}
         ORDER BY block_num DESC, timestamp DESC
         LIMIT ${limit} OFFSET ${offset}
       `
@@ -627,12 +683,11 @@ export async function getEVVMAddress(address: string): Promise<EVVMAddress | nul
     const normalizedAddress = address.replace(/^0x/i, '').replace(/'/g, "''")
     
     // Obtener el balance más reciente de eventos BalanceUpdated
-    // Filtrar por dirección del contrato EVVM
+    // Nota: No filtramos por address del contrato porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     const balanceSQL = `
       SELECT new_balance, block_num
       FROM "${datasetNamespace}".balance_updated
-      WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
-        AND LOWER(CAST(account AS VARCHAR)) = LOWER('${normalizedAddress}')
+      WHERE account = 0x${normalizedAddress}
       ORDER BY block_num DESC
       LIMIT 1
     `
@@ -667,7 +722,7 @@ export async function getEVVMBlocksPaginated(
 ): Promise<EVVMBlock[]> {
   const datasetNamespace = getDatasetNamespace()
   // Intentar primero con pay_executed
-  // Filtrar por dirección del contrato EVVM
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
   let sql = `
     SELECT 
       block_num as block_number,
@@ -675,7 +730,6 @@ export async function getEVVMBlocksPaginated(
       COUNT(*) as transaction_count,
       MIN(tx_hash) as first_transaction_hash
     FROM "${datasetNamespace}".pay_executed
-    WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
     GROUP BY block_num
     ORDER BY block_num DESC
     LIMIT ${limit} OFFSET ${offset}
@@ -684,6 +738,7 @@ export async function getEVVMBlocksPaginated(
   try {
     let results = await queryAmpSQL<any>(sql)
     
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -692,7 +747,6 @@ export async function getEVVMBlocksPaginated(
           COUNT(*) as transaction_count,
           MIN(tx_hash) as first_transaction_hash
         FROM "${datasetNamespace}".balance_updated
-        WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
         GROUP BY block_num
         ORDER BY block_num DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -735,7 +789,7 @@ export async function getEVVMTransactionsPaginated(
   offset: number = 0
 ): Promise<EVVMTransaction[]> {
   const datasetNamespace = getDatasetNamespace()
-  // Filtrar por dirección del contrato EVVM
+  // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
   let sql = `
     SELECT 
       tx_hash,
@@ -748,7 +802,6 @@ export async function getEVVMTransactionsPaginated(
       priority_flag,
       executor
     FROM "${datasetNamespace}".pay_executed
-    WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
     ORDER BY block_num DESC, timestamp DESC
     LIMIT ${limit} OFFSET ${offset}
   `
@@ -756,6 +809,7 @@ export async function getEVVMTransactionsPaginated(
   try {
     let results = await queryAmpSQL<any>(sql)
     
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     if (results.length === 0) {
       sql = `
         SELECT 
@@ -769,7 +823,6 @@ export async function getEVVMTransactionsPaginated(
           CAST(false AS BOOLEAN) as priority_flag,
           CAST(NULL AS VARCHAR) as executor
         FROM "${datasetNamespace}".balance_updated
-        WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')
         ORDER BY block_num DESC, timestamp DESC
         LIMIT ${limit} OFFSET ${offset}
       `
@@ -823,28 +876,31 @@ export async function getEVVMStats(): Promise<EVVMStats> {
     const latestBlock = latestBlocks[0]?.blockId || 0
 
     // Intentar contar bloques con pay_executed
-    // Filtrar por dirección del contrato EVVM
-    let totalBlocksSQL = `SELECT COUNT(DISTINCT block_num) as count FROM "${datasetNamespace}".pay_executed WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')`
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
+    let totalBlocksSQL = `SELECT COUNT(DISTINCT block_num) as count FROM "${datasetNamespace}".pay_executed`
     let totalBlocksResult = await queryAmpSQL<{ count: number }>(totalBlocksSQL)
     let totalBlocks = totalBlocksResult[0]?.count || 0
 
     // Si no hay bloques con pay_executed, usar balance_updated
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     if (totalBlocks === 0) {
-      totalBlocksSQL = `SELECT COUNT(DISTINCT block_num) as count FROM "${datasetNamespace}".balance_updated WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}')`
+      totalBlocksSQL = `SELECT COUNT(DISTINCT block_num) as count FROM "${datasetNamespace}".balance_updated`
       totalBlocksResult = await queryAmpSQL<{ count: number }>(totalBlocksSQL)
       totalBlocks = totalBlocksResult[0]?.count || latestBlock
     }
 
     // Contar transacciones en las últimas 24 horas
     // Convertir a ISO string para comparar con timestamps ISO de Amp
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     const twentyFourHoursAgo = new Date(Date.now() - 86400 * 1000).toISOString()
-    let recentTxSQL = `SELECT COUNT(*) as count FROM "${datasetNamespace}".pay_executed WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}') AND timestamp >= '${twentyFourHoursAgo}'`
+    let recentTxSQL = `SELECT COUNT(*) as count FROM "${datasetNamespace}".pay_executed WHERE timestamp >= '${twentyFourHoursAgo}'`
     let recentTxResult = await queryAmpSQL<{ count: number }>(recentTxSQL)
     let totalTransactions24h = recentTxResult[0]?.count || 0
 
     // Si no hay transacciones con pay_executed, usar balance_updated
+    // Nota: No filtramos por address porque Amp no soporta CAST de FixedSizeBinary a VARCHAR
     if (totalTransactions24h === 0) {
-      recentTxSQL = `SELECT COUNT(*) as count FROM "${datasetNamespace}".balance_updated WHERE LOWER(CAST(address AS VARCHAR)) = LOWER('${EVVM_CONTRACT_NORMALIZED}') AND timestamp >= '${twentyFourHoursAgo}'`
+      recentTxSQL = `SELECT COUNT(*) as count FROM "${datasetNamespace}".balance_updated WHERE timestamp >= '${twentyFourHoursAgo}'`
       recentTxResult = await queryAmpSQL<{ count: number }>(recentTxSQL)
       totalTransactions24h = recentTxResult[0]?.count || 0
     }

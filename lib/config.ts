@@ -91,3 +91,15 @@ export const RPC_CONFIG = {
   baseSepolia: SUPPORTED_CHAINS.baseSepolia.rpcUrl,
 }
 
+// Exportar tipos y funciones del registro de EVVMs
+export type { EVVMInfo } from "./evvm-registry"
+export {
+  EVVM_REGISTRY,
+  getEVVMsByChain,
+  getEVVMById,
+  getEVVMByAddress,
+  getAllEVVMs,
+  getEvvmIdsByChain,
+  isEvvmIdRegistered,
+} from "./evvm-registry"
+
